@@ -48,12 +48,12 @@ int main(int argc, char** argv){
 
 	float *pDataB = (float*) malloc(sizeof(float));
 	*pDataB = 3.0;
-
 	TF_Tensor* pTensorB = TF_NewTensor(TF_FLOAT, dims, 1, (void*)pDataB, sizeof(float), freeData, (void*) NULL);
 	TF_Operation* pOpB = TF_GraphOperationByName(pGraph, "b");
 
 	TF_Operation* pOpC = TF_GraphOperationByName(pGraph, "c");
 	TF_Tensor* pTensorC = TF_NewTensor(TF_FLOAT, dims, 1, (void*)pDataA, sizeof(float), freeData, (void*) NULL);
+	//
 	TF_Tensor* pInpVals[] = {pTensorA, pTensorB};
 	TF_Output inps[] = {{pOpA, 0}, {pOpB, 0}};
 	TF_Output graphOut = {pOpC, (int)0};
