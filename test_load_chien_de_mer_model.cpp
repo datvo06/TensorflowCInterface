@@ -3,7 +3,10 @@
 #include <tensorflow/c/c_api.h>
 #include <string>
 #include <string.h>
+#include <stack>
+#include <vector>
 #include "test_load.hpp"
+
 
 const bool True = true;
 const bool False = false;
@@ -14,7 +17,7 @@ static TF_Graph* pGraph = NULL;
 static TF_Status* pStatus = NULL;
 static TF_Buffer* pRunOptsBuff = NULL;
 static TF_Buffer* pMetaGraphBuff = NULL; 
-static TF_Session* pSess=NULL;
+static TF_Session* pSess = NULL;
 static TF_Operation *pInpOp=NULL, *pSizeOp=NULL, *pOutOp=NULL;
 
 
@@ -127,7 +130,39 @@ static void runSession(TF_Tensor* pInpTensor, TF_Tensor* pSizeTensor, TF_Tensor*
 		// print some errors here...
 		fprintf(stderr, "ERROR: Unable to run session %s\n", TF_Message(pStatus));
 	}
+}
 
+
+static void recursivePrint(TF_Tensor* pTensor, int currentDim, std::vector<int> offsets){
+	if (currentDim !=  TF_NumDims(pTensor) - 1){
+		for(int i = 0; i < TF_Dim(pTensor, currentDim); i++){
+			if (currentDim < TF_NumDims(pTensor) -2){
+				printf("\n");
+				for(int i = 0; i < currentDim+1; i++) printf("\t");
+			}
+			printf("[");
+			std::vector<int> newOffsets = offsets;
+			newOffsets.push_back(i);
+			recursivePrint(pTensor, currentDim+1, newOffsets);
+			if (currentDim < TF_NumDims(pTensor) -2){
+				printf("\n");
+				for(int i = 0; i < currentDim; i++) printf("\t");
+			}
+			printf("]");
+			if (i < TF_Dim(pTensor, currentDim)	-1) printf(",");
+			printf("\n");
+		}
+	}
+	else{
+		int64_t offset = 1;
+		for(size_t i = 0; i < offsets.size(); i++){
+			offset *= offsets[i];
+		}
+		for(int i=0; i < TF_Dim(pTensor, currentDim) - 1; i++){
+			printf("%f, ", ((float*)TF_TensorData(pTensor))[offset*TF_Dim(pTensor, currentDim)+i]);
+		}
+		printf("%f", ((float*)TF_TensorData(pTensor))[offset*(TF_Dim(pTensor, currentDim)+1)-1]);
+	}
 }
 
 
@@ -146,11 +181,19 @@ void predictTF(int64_t numSample, int32_t T, float* inpData, float* outputBuffer
 	// TF_DeleteTensor(pInpTensor);
 	// TF_DeleteTensor(pInpSizeTensor);
 	printf("%d: Finished running session\n", i++);
-	printf("- Output parameters: \n");
-	printf("Number of dimmension - %d\n", TF_NumDims(pOutputTensor));
-	printf("Output Data Type: %d\n", TF_TensorType(pOutputTensor));
-	printf("Output Tensor Size in number of floats - %ld\n", TF_TensorByteSize(pOutputTensor)/sizeof(float));
-	// memcpy(outputBuffer, (void*)TF_TensorData(pOutputTensor), 2*sizeof(float));
+	printf("Output parameters: \n");
+	printf("- Number of dimmension - %d\n", TF_NumDims(pOutputTensor));
+	printf("- Output Data Type: %d\n", TF_TensorType(pOutputTensor));
+	printf("- Output Data Shape: (");
+	for (int k = 0; k < TF_NumDims(pOutputTensor); k++){
+		printf("%ld, ", TF_Dim(pOutputTensor, k));
+	}
+	printf(")\n");
+	printf("- Output Tensor Size in number of floats - %ld\n", TF_TensorByteSize(pOutputTensor)/sizeof(float));
+	printf("%dOutput: \n", i++);
+	std::stack<float> printStack;
+	recursivePrint(pOutputTensor, 0, std::vector<int>());
+	memcpy(outputBuffer, (void*)TF_TensorData(pOutputTensor), 2*sizeof(float));
 	// TF_DeleteTensor(pOutputTensor);
 	printf("%d\n", i++);
 }
