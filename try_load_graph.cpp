@@ -52,6 +52,7 @@ int main(int argc, char** argv){
 	TF_Operation* pOpB = TF_GraphOperationByName(pGraph, "b");
 
 	TF_Operation* pOpC = TF_GraphOperationByName(pGraph, "c");
+
 	TF_Tensor* pTensorC = TF_NewTensor(TF_FLOAT, dims, 1, (void*)pDataA, sizeof(float), freeData, (void*) NULL);
 	//
 	TF_Tensor* pInpVals[] = {pTensorA, pTensorB};
