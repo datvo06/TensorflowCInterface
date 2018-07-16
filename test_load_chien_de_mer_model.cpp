@@ -148,6 +148,7 @@ void predictTF(int64_t numSample, int32_t T, float* inpData, float* outputBuffer
 	printf("%d: Finished running session\n", i++);
 	printf("- Output parameters: \n");
 	printf("Number of dimmension - %d\n", TF_NumDims(pOutputTensor));
+	printf("Output Data Type: %d\n", TF_TensorType(pOutputTensor));
 	printf("Output Tensor Size in number of floats - %ld\n", TF_TensorByteSize(pOutputTensor)/sizeof(float));
 	// memcpy(outputBuffer, (void*)TF_TensorData(pOutputTensor), 2*sizeof(float));
 	// TF_DeleteTensor(pOutputTensor);
