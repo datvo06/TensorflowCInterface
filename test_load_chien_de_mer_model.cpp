@@ -155,6 +155,11 @@ void predictTF(int64_t numSample, int32_t T, float* inpData, float* outputBuffer
 }
 
 
+void closeTF(){
+	TF_CloseSession(pSess, pStatus);
+}
+
+
 static TF_Buffer* readFile(const char* filename){
 	FILE *f = fopen(filename, "rb");
   fseek(f, 0, SEEK_END);
