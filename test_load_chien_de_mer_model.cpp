@@ -134,35 +134,50 @@ static void runSession(TF_Tensor* pInpTensor, TF_Tensor* pSizeTensor, TF_Tensor*
 
 
 static void recursivePrint(TF_Tensor* pTensor, int currentDim, std::vector<int> offsets){
+	if (currentDim == 0) printf("[\n");
 	if (currentDim !=  TF_NumDims(pTensor) - 1){
 		for(int i = 0; i < TF_Dim(pTensor, currentDim); i++){
 			if (currentDim < TF_NumDims(pTensor) -2){
 				printf("\n");
-				for(int i = 0; i < currentDim+1; i++) printf("\t");
 			}
+			if (currentDim < TF_NumDims(pTensor) -1)
+				for(int i = 0; i < currentDim+1; i++) printf("\t");
 			printf("[");
 			std::vector<int> newOffsets = offsets;
 			newOffsets.push_back(i);
 			recursivePrint(pTensor, currentDim+1, newOffsets);
 			if (currentDim < TF_NumDims(pTensor) -2){
 				printf("\n");
-				for(int i = 0; i < currentDim; i++) printf("\t");
 			}
+			if (currentDim < TF_NumDims(pTensor) -1)
+				for(int i = 0; i < currentDim; i++) printf("\t");
 			printf("]");
 			if (i < TF_Dim(pTensor, currentDim)	-1) printf(",");
 			printf("\n");
 		}
 	}
 	else{
-		int64_t offset = 1;
-		for(size_t i = 0; i < offsets.size(); i++){
-			offset *= offsets[i];
-		}
 		for(int i=0; i < TF_Dim(pTensor, currentDim) - 1; i++){
-			printf("%f, ", ((float*)TF_TensorData(pTensor))[offset*TF_Dim(pTensor, currentDim)+i]);
+			size_t indice = 0; 
+			int coeff = 1;
+			indice += coeff*i;
+			for (size_t j = 0; j < offsets.size(); j++){
+				coeff *= TF_Dim(pTensor, currentDim - j);
+				indice += offsets[offsets.size() - j - 1];
+			}
+			printf("%f, ", ((float*)TF_TensorData(pTensor))[indice]);
 		}
-		printf("%f", ((float*)TF_TensorData(pTensor))[offset*(TF_Dim(pTensor, currentDim)+1)-1]);
+		size_t indice = 0; 
+		int coeff = 1;
+
+		indice += coeff*TF_Dim(pTensor, currentDim) -1;
+		for (size_t j = 0; j < offsets.size(); j++){
+				coeff *= TF_Dim(pTensor, currentDim - j);
+				indice += offsets[offsets.size() - j - 1];
+		}
+		printf("%f", ((float*)TF_TensorData(pTensor))[indice]);
 	}
+	if (currentDim == 0) printf("]\n");
 }
 
 
@@ -190,7 +205,7 @@ void predictTF(int64_t numSample, int32_t T, float* inpData, float* outputBuffer
 	}
 	printf(")\n");
 	printf("- Output Tensor Size in number of floats - %ld\n", TF_TensorByteSize(pOutputTensor)/sizeof(float));
-	printf("%dOutput: \n", i++);
+	printf("%d: Output \n", i++);
 	std::stack<float> printStack;
 	recursivePrint(pOutputTensor, 0, std::vector<int>());
 	memcpy(outputBuffer, (void*)TF_TensorData(pOutputTensor), 2*sizeof(float));
