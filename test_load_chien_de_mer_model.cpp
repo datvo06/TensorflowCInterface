@@ -235,6 +235,7 @@ TF_Tensor* predictTFRNN(float* inpData, int32_t T){
 	int64_t pInpDimsT[] = {1};
 	float* buffer = (float*) malloc(48*20*T*sizeof(float));
 	memcpy(buffer, inpData, 48*20*T*sizeof(float));
+	printf("Here\n");
 	TF_Tensor* pInpSizeTensor = TF_NewTensor(TF_INT32, pInpDimsT, 1, &T, sizeof(int32_t), freeT, NULL);
 	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 3, buffer, sizeof(float)*39, freeData, NULL);
 	TF_Tensor* pOutputTensor = NULL;
