@@ -5,21 +5,35 @@
 #include <string.h>
 #include <stack>
 #include <vector>
-#include "test_load.hpp"
+#include "StatusSingleton.hpp"
+#include <map>
 
 
 const bool True = true;
 const bool False = false;
 
-static TF_Buffer* readFile(const char* filename); 
-static TF_SessionOptions* pSessOpts = NULL;
-static TF_Graph* pGraph = NULL;
-static TF_Status* pStatus = NULL;
-static TF_Buffer* pRunOptsBuff = NULL;
-static TF_Buffer* pMetaGraphBuff = NULL; 
-static TF_Session* pSess = NULL;
-static TF_Operation *pInpOp=NULL, *pSizeOp=NULL, *pOutOp=NULL;
+typedef struct {
+	TF_SessionOptions* pSessOpts;
+	TF_Graph* pGraph;
+	TF_Buffer* pRunOptsBuff;
+	TF_Buffer* pMetaGraphBuff; 
+	TF_Session* pSess;
+	std::map<std::string, TF_Operation*> inpDict;
+	std::map<std::string, TF_Operation*> outDict;
+} TFModelUnit;
 
+
+static TFModelUnit cnnModel = {
+	NULL, NULL, NULL, NULL, NULL,
+ 	std::map<std::string, TF_Operation*>(),
+ 	std::map<std::string, TF_Operation*>(),
+};
+static TFModelUnit rnnModel = {
+	NULL, NULL, NULL, NULL, NULL,
+ 	std::map<std::string, TF_Operation*>(),
+ 	std::map<std::string, TF_Operation*>()};
+
+static TF_Buffer* readFile(const char* filename); 
 
 static bool isInitialized = false;
 
@@ -37,99 +51,111 @@ static void  freeT(void* data, size_t, void*){
 }
 
 
-/** 
- * @brief init initialize for whole lib file
- */
-bool init(const char* filePath){
+static void printTFOpParam(TF_Graph* pGraph, std::string name, TF_Operation* pOp){
+	printf("name - %s", name.c_str());
+	int numDims = TF_GraphGetTensorNumDims(
+			pGraph, {pOp, 0}, TFStatusSingleton::instance().getStatus());
+	int64_t* pDims = NULL;
+	if (TF_GetCode(TFStatusSingleton::instance().getStatus()) != TF_OK){
+		fprintf(stderr, "ERROR: Unable to read number of dimmension of op - %s\n", TF_Message(TFStatusSingleton::instance().getStatus()));
+	}
+	printf("\nParams: \n");
+	printf("- Data Size Dim: %d\n", numDims);
+	pDims = (int64_t*) malloc(numDims*sizeof(int64_t));
+	TF_GraphGetTensorShape(pGraph, {pOp, 0}, pDims, numDims, TFStatusSingleton::instance().getStatus());
+	printf("- Data Shape: ");
+	for (int k = 0; k < numDims; k++) printf("%ld, ", pDims[k]);
+	printf("\n");
+	free(pDims);
+
+}
+
+
+static bool initModel(const char* filePath, TFModelUnit* pModelUnit, const std::vector<std::string>& inputNames, const std::vector<std::string>& outputNames){
 	int i = 0;
-	
-	printf("\n%d: Initializing Tensorflow module\n", i++);
-	if (isInitialized) return true;
-	pStatus = TF_NewStatus();
-	pSessOpts = TF_NewSessionOptions();
-	pGraph = TF_NewGraph();
-	pRunOptsBuff = TF_NewBufferFromString("", 0);
-	//pRunOptsBuff = TF_NewBuffer();
-	pMetaGraphBuff = TF_NewBuffer();
-	const char* const tags = {"serve"};
-	printf("%d: Allocated Tensorflow's Objects\n", i++);
-	pSess = TF_LoadSessionFromSavedModel(
-			pSessOpts, pRunOptsBuff, filePath, &tags, 1,
-		 pGraph, pMetaGraphBuff,	pStatus);
+	TF_Status* pStatus = TFStatusSingleton::instance().getStatus();
+	pModelUnit->pSessOpts = TF_NewSessionOptions();
+	pModelUnit->pGraph = TF_NewGraph();
+
+	pModelUnit->pRunOptsBuff = TF_NewBufferFromString("", 0);
+	pModelUnit->pMetaGraphBuff = TF_NewBuffer();
+	TF_Buffer* pGraphDef = readFile(filePath) ;
+	TF_ImportGraphDefOptions* pGraphOpts = TF_NewImportGraphDefOptions();
+	TF_GraphImportGraphDef(pModelUnit->pGraph, pGraphDef, pGraphOpts, pStatus);
+	if(TF_GetCode(pStatus) != TF_OK){
+		// print some errors here...
+		fprintf(stderr, "ERROR: Unable Load GraphDef: %s", TF_Message(pStatus));
+		return False;
+	}
+	pModelUnit->pSess = TF_NewSession(pModelUnit->pGraph, pModelUnit->pSessOpts, pStatus);
+
 	if(TF_GetCode(pStatus) != TF_OK){
 		// print some errors here...
 		fprintf(stderr, "ERROR: Unable to create session %s", TF_Message(pStatus));
 		return False;
 	}
-	isInitialized = True;
-	pInpOp = TF_GraphOperationByName(pGraph, "X");
-	pSizeOp = TF_GraphOperationByName(pGraph, "T");
-	pOutOp = TF_GraphOperationByName(pGraph, "softmax");
-	if (pInpOp == NULL || pSizeOp == NULL || pOutOp == NULL){
-		fprintf(stderr, "ERROR: Unable to load operations");
+	for(size_t i = 0; i < inputNames.size(); i++){
+		pModelUnit->inpDict[inputNames[i]] = TF_GraphOperationByName(pModelUnit->pGraph, inputNames[i].c_str());
 	}
-
+	for(size_t i = 0; i < outputNames.size(); i++){
+		pModelUnit->outDict[std::string(outputNames[i])] = TF_GraphOperationByName(pModelUnit->pGraph, outputNames[i].c_str());
+	}
 	printf("%d: Getting input & output params\n", i++);
-	int numDims = TF_GraphGetTensorNumDims(pGraph, {pInpOp, 0}, pStatus);
-	int64_t* pDims = NULL;
-	int j = 0; 
-	if (TF_GetCode(pStatus) != TF_OK){
-		fprintf(stderr, "ERROR: Unable to read number of dimmension of op - %s\n", TF_Message(pStatus));
+	printf("\n- Inputs: ");
+	for (auto i = pModelUnit->inpDict.begin(); i != pModelUnit->inpDict.end(); i++){
+		if (i->second == NULL) {
+			fprintf(stderr, "ERROR: Unable to load operations");
+			return False;
+		}
+		printTFOpParam(pModelUnit->pGraph, i->first, i->second);
 	}
-	printf("Input Params %d: \n", j++);
-	printf("- Input Data Size Dim: %d\n", numDims);
-	pDims = (int64_t*) malloc(numDims*sizeof(int64_t));
-	TF_GraphGetTensorShape(pGraph, {pInpOp, 0}, pDims, numDims, pStatus);
-	printf("- Input Data Shape: ");
-	for (int k = 0; k < numDims; k++) printf("%ld, ", pDims[k]);
-	printf("\n");
-
-
-	printf("Input Params %d: \n", j++);
-	numDims = TF_GraphGetTensorNumDims(pGraph, {pSizeOp, 0}, pStatus);
-	if (TF_GetCode(pStatus) != TF_OK){
-		fprintf(stderr, "ERROR: Unable to read number of dimmension of op - %s\n", TF_Message(pStatus));
+	printf("\n- Outputs: ");
+	for (auto i = pModelUnit->outDict.begin(); i != pModelUnit->outDict.end(); i++){
+		if (i->second == NULL) {
+			fprintf(stderr, "ERROR: Unable to load operations");
+			return False;
+		}
+		printTFOpParam(pModelUnit->pGraph, i->first, i->second);
 	}
-	printf("- Input Data Size Dim: %d\n", numDims);
-	pDims = (int64_t*) realloc(pDims, numDims*sizeof(int64_t));
-	TF_GraphGetTensorShape(pGraph, {pSizeOp, 0}, pDims, numDims, pStatus);
-	printf("- Input Data Shape: ");
-	for (int k = 0; k < numDims; k++) printf("%ld, ", pDims[k]);
-	printf("\n");
 
+	return True;
+}
 
-	printf("Output Params %d: \n", j++);
-	numDims = TF_GraphGetTensorNumDims(pGraph, {pOutOp, 0}, pStatus);
-	if (TF_GetCode(pStatus) != TF_OK){
-		fprintf(stderr, "ERROR: Unable to read number of dimmension of op - %s\n", TF_Message(pStatus));
-	}
-	printf("- Output Data Size Dim: %d\n", numDims);
-	pDims = (int64_t*) realloc(pDims, numDims*sizeof(int64_t));
-	TF_GraphGetTensorShape(pGraph, {pOutOp, 0}, pDims, numDims, pStatus);
-	printf("- Output Data Shape: ");
-	for (int k = 0; k < numDims; k++) printf("%ld, ", pDims[k]);
-	printf("\n");
+/** 
+ * @brief init initialize for whole lib file
+ */
+bool initTF(const char* cnnFilePath, const char* rnnFilePath){
+	int i = 0;
+	printf("\n%d: Initializing Tensorflow module\n", i++);
+	if (isInitialized) return true;
 
-	free(pDims);
+	std::vector<std::string> inputNamesCNN; inputNamesCNN.push_back("X");
+	std::vector<std::string> outputNamesCNN; outputNamesCNN.push_back("X_conv");
+
+	std::vector<std::string> inputNamesRNN; inputNamesRNN.push_back("X_conv_input"); inputNamesRNN.push_back("T");
+	std::vector<std::string> outputNamesRNN; outputNamesRNN.push_back("softmax");
+
+	initModel(cnnFilePath, &cnnModel, inputNamesCNN, outputNamesCNN);
+	printf("%d: Initialized CNN Model\n", i++);
+	
+	initModel(rnnFilePath, &rnnModel, inputNamesRNN, outputNamesRNN);
+	printf("%d: Initialized RNN Model\n", i++);
 	isInitialized = True;
+
 	return isInitialized;
 }
 
 
-static void runSession(TF_Tensor* pInpTensor, TF_Tensor* pSizeTensor, TF_Tensor** ppOutputTensors){
-	if (!isInitialized) init("cho_dat");
-	TF_Output inps[] = {{pInpOp, 0}, {pSizeOp, 0}};
-	TF_Tensor* pInpVals[] = {pInpTensor, pSizeTensor};
-	TF_Output outs[] = {{pOutOp, 0}};
-	TF_SessionRun(pSess,
-		 	NULL,
-		 	inps, pInpVals, 2,
-		 	outs, ppOutputTensors, 1,
-		 	NULL, 0, NULL, pStatus);
-	if(TF_GetCode(pStatus) != TF_OK){
-		// print some errors here...
-		fprintf(stderr, "ERROR: Unable to run session %s\n", TF_Message(pStatus));
+static float getElement(TF_Tensor* pTensor, const std::vector<int>& index){
+	float* pData = (float*)TF_TensorData(pTensor);
+	size_t offset = 0;
+	size_t coeff = 1;
+	for(int i = index.size()-2; i >= 0; i--){
+		coeff *= TF_Dim(pTensor, i+1);
+		offset += coeff*index[i];
 	}
+	offset += index.back();
+	return pData[offset];
 }
 
 
@@ -158,64 +184,67 @@ static void recursivePrint(TF_Tensor* pTensor, int currentDim, std::vector<int> 
 	}
 	else{
 		for(int i=0; i < TF_Dim(pTensor, currentDim) - 1; i++){
-			size_t indice = 0; 
-			int coeff = 1;
-			indice += coeff*i;
-			for (size_t j = 0; j < offsets.size(); j++){
-				coeff *= TF_Dim(pTensor, currentDim - j);
-				indice += offsets[offsets.size() - j - 1];
-			}
-			printf("%f, ", ((float*)TF_TensorData(pTensor))[indice]);
+			offsets.push_back(i);
+			printf("%f, ", getElement(pTensor, offsets));
+			offsets.pop_back();
 		}
-		size_t indice = 0; 
-		int coeff = 1;
-
-		indice += coeff*TF_Dim(pTensor, currentDim) -1;
-		for (size_t j = 0; j < offsets.size(); j++){
-				coeff *= TF_Dim(pTensor, currentDim - j);
-				indice += offsets[offsets.size() - j - 1];
-		}
-		printf("%f", ((float*)TF_TensorData(pTensor))[indice]);
+		offsets.push_back(TF_Dim(pTensor, currentDim) - 1);
+		printf("%f", getElement(pTensor, offsets));
 	}
 	if (currentDim == 0) printf("]\n");
 }
 
 
-void predictTF(int64_t numSample, int32_t T, float* inpData, float* outputBuffer){
-	int64_t pInpDims[] = {numSample, (int64_t)T, 39, 1};
-	int i = 0;
-	printf("\n%d: Start predicting using C API...\n", i++);
-	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 4, inpData, sizeof(float)*numSample*T*39, freeData, NULL);
-	int64_t pInpDimsT[] = {1};
-	printf("%d: Initialized First tensor\n", i++);
-	TF_Tensor* pInpSizeTensor = TF_NewTensor(TF_INT32, pInpDimsT, 1, &T, sizeof(int32_t), freeT, NULL);
-	printf("%d: Initialized Second tensor\n", i++);
-	TF_Tensor* pOutputTensor = NULL;
-	printf("%d: Running session...\n", i++);
-	runSession(pInpTensor, pInpSizeTensor, &pOutputTensor);
-	// TF_DeleteTensor(pInpTensor);
-	// TF_DeleteTensor(pInpSizeTensor);
-	printf("%d: Finished running session\n", i++);
-	printf("Output parameters: \n");
-	printf("- Number of dimmension - %d\n", TF_NumDims(pOutputTensor));
-	printf("- Output Data Type: %d\n", TF_TensorType(pOutputTensor));
-	printf("- Output Data Shape: (");
-	for (int k = 0; k < TF_NumDims(pOutputTensor); k++){
-		printf("%ld, ", TF_Dim(pOutputTensor, k));
+void printTFTensor(TF_Tensor* pTensor){
+	recursivePrint(pTensor, 0, std::vector<int>());
+}
+
+
+std::vector<int> getTFTensorDim(TF_Tensor* pTensor){
+	std::vector<int> dims;
+	for(int i = 0; i < TF_NumDims(pTensor); i++){
+		dims.push_back(TF_Dim(pTensor, i));
 	}
-	printf(")\n");
-	printf("- Output Tensor Size in number of floats - %ld\n", TF_TensorByteSize(pOutputTensor)/sizeof(float));
-	printf("%d: Output \n", i++);
-	std::stack<float> printStack;
-	recursivePrint(pOutputTensor, 0, std::vector<int>());
-	memcpy(outputBuffer, (void*)TF_TensorData(pOutputTensor), 2*sizeof(float));
-	// TF_DeleteTensor(pOutputTensor);
-	printf("%d\n", i++);
+	return dims;
+}
+
+
+TF_Tensor* predictTFCNN(float* inpData){
+	int64_t pInpDims[] = {1, 1, 39, 1};
+	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 4, inpData, sizeof(float)*39, freeData, NULL);
+	TF_Tensor* pOutputTensor;
+	TF_Output inps[] = {{cnnModel.inpDict["X"], 0}};
+	TF_Output outs[] = {{cnnModel.inpDict["X_conv"], 0}};
+	TF_SessionRun(cnnModel.pSess,
+		 	NULL,
+			inps, &pInpTensor, 1,
+			outs, &pOutputTensor, 1,
+			NULL, 0, NULL, TFStatusSingleton::instance().getStatus());
+	return pOutputTensor;
+}
+
+
+TF_Tensor* predictTFRNN(float* inpData, int32_t T){
+	int64_t pInpDims[] = {1, int64_t(T), 48*20};
+	int64_t pInpDimsT[] = {1};
+	TF_Tensor* pInpSizeTensor = TF_NewTensor(TF_INT32, pInpDimsT, 1, &T, sizeof(int32_t), freeT, NULL);
+	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 3, inpData, sizeof(float)*39, freeData, NULL);
+	TF_Tensor* pOutputTensor;
+	TF_Output inps[] = {{cnnModel.inpDict["X_conv_input"], 0}, {cnnModel.inpDict["T"], 0}};
+	TF_Output outs[] = {{cnnModel.inpDict["softmax"], 0}};
+	TF_SessionRun(cnnModel.pSess,
+		 	NULL,
+			inps, &pInpTensor, 1,
+			outs, &pOutputTensor, 1,
+			NULL, 0, NULL, TFStatusSingleton::instance().getStatus());
+	TF_DeleteTensor(pInpSizeTensor);
+	return pOutputTensor;
 }
 
 
 void closeTF(){
-	TF_CloseSession(pSess, pStatus);
+	TF_CloseSession(cnnModel.pSess, TFStatusSingleton::instance().getStatus());
+	TF_CloseSession(rnnModel.pSess, TFStatusSingleton::instance().getStatus());
 }
 
 
