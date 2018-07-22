@@ -130,9 +130,11 @@ bool initTF(const char* cnnFilePath, const char* rnnFilePath){
 	if (isInitialized) return true;
 
 	std::vector<std::string> inputNamesCNN; inputNamesCNN.push_back("X");
-	std::vector<std::string> outputNamesCNN; outputNamesCNN.push_back("X_conv");
+	std::vector<std::string> outputNamesCNN; outputNamesCNN.push_back("X_conv_relu");
 
-	std::vector<std::string> inputNamesRNN; inputNamesRNN.push_back("X_conv_input"); inputNamesRNN.push_back("T");
+	std::string rnnInpNamesArray[] = {"X_conv_input", "T"};
+	std::vector<std::string> inputNamesRNN(rnnInpNamesArray,
+		 	rnnInpNamesArray+sizeof(rnnInpNamesArray)/sizeof(std::string));
 	std::vector<std::string> outputNamesRNN; outputNamesRNN.push_back("softmax");
 
 	initModel(cnnFilePath, &cnnModel, inputNamesCNN, outputNamesCNN);
@@ -209,20 +211,23 @@ std::vector<int> getTFTensorDim(TF_Tensor* pTensor){
 }
 
 
-TF_Tensor* predictTFCNN(float* inpData){
-	int64_t pInpDims[] = {1, 1, 39, 1};
-	float* buffer = (float*)malloc(39*sizeof(float));
-	memcpy(buffer, inpData, 39*sizeof(float));
-	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 4, buffer, sizeof(float)*39, freeData, NULL);
+TF_Tensor* predictTFCNN(float* inpData, int32_t inpSize){
+	int64_t pInpDims[] = {1, inpSize, 39, 1};
+
+	float* buffer = (float*)malloc(39*sizeof(float)*inpSize);
+	memcpy(buffer, inpData, inpSize*39*sizeof(float));
+
+	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 4, buffer, sizeof(float)*39*inpSize, freeData, NULL);
 	TF_Tensor* pOutputTensor = NULL;
 	
 	TF_Output inps[] = {{cnnModel.inpDict["X"], 0}};
-	TF_Output outs[] = {{cnnModel.outDict["X_conv"], 0}};
+	TF_Output outs[] = {{cnnModel.outDict["X_conv_relu"], 0}};
 	TF_SessionRun(cnnModel.pSess,
 		 	NULL,
 			inps, &pInpTensor, 1,
 			outs, &pOutputTensor, 1,
 			NULL, 0, NULL, TFStatusSingleton::instance().getStatus());
+	TF_DeleteTensor(pInpTensor);
 	if (TF_OK != TF_GetCode(TFStatusSingleton::instance().getStatus())){
 		fprintf(stderr, "\nERROR: Failed to run CNN model - %s", TF_Message(TFStatusSingleton::instance().getStatus()));
 	}
@@ -231,17 +236,20 @@ TF_Tensor* predictTFCNN(float* inpData){
 
 
 TF_Tensor* predictTFRNN(float* inpData, int32_t T){
-	int64_t pInpDims[] = {1, int64_t(T), 48*20};
+	int64_t pInpDims[] = {1, int64_t(T)/6, 48*20};
 	int64_t pInpDimsT[] = {1};
+
 	float* buffer = (float*) malloc(48*20*T*sizeof(float));
-	memcpy(buffer, inpData, 48*20*T*sizeof(float));
-	printf("Here\n");
+	memcpy(buffer, inpData, 48*20*T*sizeof(float)/6);
+
 	TF_Tensor* pInpSizeTensor = TF_NewTensor(TF_INT32, pInpDimsT, 1, &T, sizeof(int32_t), freeT, NULL);
-	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 3, buffer, sizeof(float)*39, freeData, NULL);
+	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 3, buffer, sizeof(float)*48*20*T/6, freeData, NULL);
 	TF_Tensor* pOutputTensor = NULL;
+
 	TF_Output inps[] = {{rnnModel.inpDict["X_conv_input"], 0}, {rnnModel.inpDict["T"], 0}};
 	TF_Output outs[] = {{rnnModel.outDict["softmax"], 0}};
 	TF_Tensor* pRNNInpTensors[] = {pInpTensor, pInpSizeTensor};
+
 	TF_SessionRun(rnnModel.pSess,
 		 	NULL,
 			inps, pRNNInpTensors, 2,
@@ -251,6 +259,7 @@ TF_Tensor* predictTFRNN(float* inpData, int32_t T){
 		fprintf(stderr, "\nERROR: Failed to run RNN model - %s", TF_Message(TFStatusSingleton::instance().getStatus()));
 	}
 
+	TF_DeleteTensor(pInpTensor);
 	TF_DeleteTensor(pInpSizeTensor);
 	return pOutputTensor;
 }
