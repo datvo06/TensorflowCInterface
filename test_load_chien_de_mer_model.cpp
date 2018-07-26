@@ -22,6 +22,11 @@ typedef struct {
 	std::map<std::string, TF_Operation*> outDict;
 } TFModelUnit;
 
+static TFModelUnit allModel = {
+	NULL, NULL, NULL, NULL, NULL,
+ 	std::map<std::string, TF_Operation*>(),
+ 	std::map<std::string, TF_Operation*>(),
+};
 
 static TFModelUnit cnnModel = {
 	NULL, NULL, NULL, NULL, NULL,
@@ -124,7 +129,7 @@ static bool initModel(const char* filePath, TFModelUnit* pModelUnit, const std::
 /** 
  * @brief init initialize for whole lib file
  */
-bool initTF(const char* cnnFilePath, const char* rnnFilePath){
+bool initTF(const char* cnnFilePath, const char* rnnFilePath, const char* allFilePath){
 	int i = 0;
 	printf("\n%d: Initializing Tensorflow module\n", i++);
 	if (isInitialized) return true;
@@ -136,6 +141,16 @@ bool initTF(const char* cnnFilePath, const char* rnnFilePath){
 	std::vector<std::string> inputNamesRNN(rnnInpNamesArray,
 		 	rnnInpNamesArray+sizeof(rnnInpNamesArray)/sizeof(std::string));
 	std::vector<std::string> outputNamesRNN; outputNamesRNN.push_back("softmax");
+
+	if (allFilePath != NULL){
+		std::string allInpNamesArray[] = {"X", "T"};
+		std::vector<std::string> inputNamesALL(allInpNamesArray,
+				allInpNamesArray+sizeof(allInpNamesArray)/sizeof(std::string));
+
+		initModel(allFilePath, &allModel, inputNamesALL, outputNamesRNN);
+		printf("\n%d: Initialized ALL Model\n", i++);
+	}
+
 
 	initModel(cnnFilePath, &cnnModel, inputNamesCNN, outputNamesCNN);
 	printf("\n%d: Initialized CNN Model\n", i++);
@@ -209,6 +224,35 @@ std::vector<int> getTFTensorDim(TF_Tensor* pTensor){
 	}
 	return dims;
 }
+
+
+TF_Tensor* predictTF(float* inpData, int32_t inpSize){
+	int64_t pInpDims[] = {1, inpSize, 39, 1};
+	int64_t pInpDimsT[] = {1};
+
+	float* buffer = (float*)malloc(39*sizeof(float)*inpSize);
+	memcpy(buffer, inpData, inpSize*39*sizeof(float));
+
+	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 4, buffer, sizeof(float)*39*inpSize, freeData, NULL);
+	TF_Tensor* pInpSizeTensor = TF_NewTensor(TF_INT32, pInpDimsT, 1, &inpSize, sizeof(int32_t), freeT, NULL);
+	TF_Tensor* pOutputTensor = NULL;
+	TF_Tensor* pALLInpTensors[] = {pInpTensor, pInpSizeTensor};
+	
+	TF_Output inps[] = {{allModel.inpDict["X"], 0}, {allModel.inpDict["T"], 0}};
+	TF_Output outs[] = {{allModel.outDict["softmax"], 0}};
+	TF_SessionRun(allModel.pSess,
+		 	NULL,
+			inps, pALLInpTensors, 2,
+			outs, &pOutputTensor, 1,
+			NULL, 0, NULL, TFStatusSingleton::instance().getStatus());
+	TF_DeleteTensor(pInpTensor);
+	if (TF_OK != TF_GetCode(TFStatusSingleton::instance().getStatus())){
+		fprintf(stderr, "\nERROR: Failed to run CNN model - %s", TF_Message(TFStatusSingleton::instance().getStatus()));
+	}
+	return pOutputTensor;
+}
+
+
 
 
 TF_Tensor* predictTFCNN(float* inpData, int32_t inpSize){
