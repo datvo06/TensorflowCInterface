@@ -279,15 +279,16 @@ TF_Tensor* predictTFCNN(float* inpData, int32_t inpSize){
 }
 
 
+
 TF_Tensor* predictTFRNN(float* inpData, int32_t T){
-	int64_t pInpDims[] = {1, int64_t(T)/6, 48*20};
+	int64_t pInpDims[] = {1, int64_t((T-15)/6)+1, 48*18};
 	int64_t pInpDimsT[] = {1};
 
-	float* buffer = (float*) malloc(48*20*T*sizeof(float));
-	memcpy(buffer, inpData, 48*20*T*sizeof(float)/6);
+	float* buffer = (float*) malloc(48*18*T*sizeof(float));
+	memcpy(buffer, inpData, 48*18*sizeof(float)*(int64_t((T-15)/6)+1));
 
 	TF_Tensor* pInpSizeTensor = TF_NewTensor(TF_INT32, pInpDimsT, 1, &T, sizeof(int32_t), freeT, NULL);
-	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 3, buffer, sizeof(float)*48*20*T/6, freeData, NULL);
+	TF_Tensor* pInpTensor = TF_NewTensor(TF_FLOAT, pInpDims, 3, buffer, sizeof(float)*48*18*(int64_t((T-15)/6)+1), freeData, NULL);
 	TF_Tensor* pOutputTensor = NULL;
 
 	TF_Output inps[] = {{rnnModel.inpDict["X_conv_input"], 0}, {rnnModel.inpDict["T"], 0}};
