@@ -76,7 +76,7 @@ static void printTFOpParam(TF_Graph* pGraph, std::string name, TF_Operation* pOp
 }
 
 
-static bool initModel(const char* filePath, TFModelUnit* pModelUnit, const std::vector<std::string>& inputNames, const std::vector<std::string>& outputNames){
+bool initModel(const char* filePath, TFModelUnit* pModelUnit, const std::vector<std::string>& inputNames, const std::vector<std::string>& outputNames){
 	int i = 0;
 	TF_Status* pStatus = TFStatusSingleton::instance().getStatus();
 	pModelUnit->pSessOpts = TF_NewSessionOptions();
@@ -87,11 +87,13 @@ static bool initModel(const char* filePath, TFModelUnit* pModelUnit, const std::
 	TF_Buffer* pGraphDef = readFile(filePath) ;
 	TF_ImportGraphDefOptions* pGraphOpts = TF_NewImportGraphDefOptions();
 	TF_GraphImportGraphDef(pModelUnit->pGraph, pGraphDef, pGraphOpts, pStatus);
+
 	if(TF_GetCode(pStatus) != TF_OK){
 		// print some errors here...
 		fprintf(stderr, "ERROR: Unable Load GraphDef: %s", TF_Message(pStatus));
 		return False;
 	}
+
 	pModelUnit->pSess = TF_NewSession(pModelUnit->pGraph, pModelUnit->pSessOpts, pStatus);
 
 	if(TF_GetCode(pStatus) != TF_OK){
@@ -226,6 +228,46 @@ std::vector<int> getTFTensorDim(TF_Tensor* pTensor){
 }
 
 
+TF_Tensor* predictTFWithData(TFModelUnit* pModel, std::map<std::string, float*> inpDataDict,
+		std::map<std::string, std::vector<int64_t>> inpSizeDict,
+		std::map<std::string, TF_DataType> inpTypeDict, std::vector<std::string> outputOpsString){
+	TF_Output* inps = (TF_Output*)malloc(inpDataDict.size()*sizeof(TF_Output));
+	TF_Tensor* pOutputTensor = NULL;
+	TF_Output* outs = (TF_Output*)malloc(outputOpsString.size()*sizeof(TF_Output));
+	TF_Tensor** pAllInpTensors = (TF_Tensor**) malloc(inpDataDict.size()*sizeof(TF_Tensor*));
+	std::vector<std::string> keyVecs;
+	for (const auto& keyValPair: inpDataDict){
+		keyVecs.push_back(keyValPair.first);
+	}
+	for (auto keyIt = keyVecs.begin(); keyIt != keyVecs.end(); keyIt ++){
+		int bufferSize = 1;
+		for (auto dimSize: inpSizeDict[(*keyIt)]){
+			bufferSize *= dimSize;
+		}
+		// Use freeT instead so tensorflow will not free our data, we manage it our self
+		pAllInpTensors[keyIt-keyVecs.begin()] = TF_NewTensor(
+				inpTypeDict[(*keyIt)], (const int64_t*)inpSizeDict[(*keyIt)].data(), (int)inpSizeDict[(*keyIt)].size(),
+			 	inpDataDict[(*keyIt)], sizeof(float)*bufferSize, freeT, NULL);
+		inps[keyIt-keyVecs.begin()] = {pModel->inpDict[(*keyIt)], 0};
+	}
+	for (auto strIt = outputOpsString.begin(); strIt != outputOpsString.end(); strIt++){
+		outs[strIt-outputOpsString.begin()] = {pModel->outDict[*strIt], 0};
+	}
+	TF_SessionRun(pModel->pSess,
+			NULL,
+			inps, pAllInpTensors, (int)keyVecs.size(),
+			outs, &pOutputTensor, (int)outputOpsString.size(),
+			NULL, 0, NULL, TFStatusSingleton::instance().getStatus());
+	for (size_t i = 0; i < keyVecs.size(); i++){
+		TF_DeleteTensor(pAllInpTensors[i]);
+	}
+	if (TF_OK != TF_GetCode(TFStatusSingleton::instance().getStatus())){
+		fprintf(stderr, "\nERROR: Failed to run TF model - %s", TF_Message(TFStatusSingleton::instance().getStatus()));
+	}
+	return pOutputTensor;
+}
+
+
 TF_Tensor* predictTF(float* inpData, int32_t inpSize){
 	int64_t pInpDims[] = {1, inpSize, 39, 1};
 	int64_t pInpDimsT[] = {1};
@@ -251,8 +293,6 @@ TF_Tensor* predictTF(float* inpData, int32_t inpSize){
 	}
 	return pOutputTensor;
 }
-
-
 
 
 TF_Tensor* predictTFCNN(float* inpData, int32_t inpSize){
