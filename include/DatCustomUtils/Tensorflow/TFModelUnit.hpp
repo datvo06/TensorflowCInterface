@@ -23,6 +23,11 @@ namespace DatCustom{
 				outDict =  	std::map<std::string, TF_Operation*>();
 			}
 			TFModelUnit(const char* filePath, const std::vector<std::string>& inputNames, const std::vector<std::string>& outputNames);
+			TF_Tensor* run(std::map<std::string, void*> inpDataDict,
+						std::map<std::string, std::vector<int64_t>> inpDimsDict,
+						std::map<std::string, size_t> inpDataSizeInByteDict,
+						std::map<std::string, TF_DataType> inpTypeDict, std::vector<std::string> outputOpsString);
+			~TFModelUnit();
 		} TFModelUnit;
 	}
 }

@@ -1,4 +1,4 @@
-#include "StatusSingleton.hpp"
+#include <DatCustomUtils/Tensorflow/StatusSingleton.hpp>
 
 
 TFStatusSingleton::TFStatusSingleton(): pStatus(TF_NewStatus()){
