@@ -49,7 +49,6 @@ static void printTFOpParam(TF_Graph* pGraph, std::string name, TF_Operation* pOp
 	free(pDims);
 }
 
-
 bool initModel(const char* filePath, TFModelUnit* pModelUnit, const std::vector<std::string>& inputNames, const std::vector<std::string>& outputNames){
 	int i = 0;
 	TF_Status* pStatus = TFStatusSingleton::instance().getStatus();
