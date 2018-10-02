@@ -4,44 +4,19 @@
 #include <string>
 #include <string.h>
 #include <stack>
-#include <vector>
 #include "StatusSingleton.hpp"
-#include <map>
-
+#include "tf_c_api_wrapper.h"
 
 const bool True = true;
 const bool False = false;
 
-typedef struct {
-	TF_SessionOptions* pSessOpts;
-	TF_Graph* pGraph;
-	TF_Buffer* pRunOptsBuff;
-	TF_Buffer* pMetaGraphBuff; 
-	TF_Session* pSess;
-	std::map<std::string, TF_Operation*> inpDict;
-	std::map<std::string, TF_Operation*> outDict;
-} TFModelUnit;
 
-static TFModelUnit allModel = {
-	NULL, NULL, NULL, NULL, NULL,
- 	std::map<std::string, TF_Operation*>(),
- 	std::map<std::string, TF_Operation*>(),
-};
-
-static TFModelUnit cnnModel = {
-	NULL, NULL, NULL, NULL, NULL,
- 	std::map<std::string, TF_Operation*>(),
- 	std::map<std::string, TF_Operation*>(),
-};
-static TFModelUnit rnnModel = {
-	NULL, NULL, NULL, NULL, NULL,
- 	std::map<std::string, TF_Operation*>(),
- 	std::map<std::string, TF_Operation*>()};
+static TFModelUnit allModel = TFModelUnit();
+static TFModelUnit cnnModel = TFModelUnit();
+static TFModelUnit rnnModel = TFModelUnit();
 
 static TF_Buffer* readFile(const char* filename); 
-
 static bool isInitialized = false;
-
 
 static void freeBuffer(void* data, size_t ) {
         free(data);
@@ -52,7 +27,7 @@ static void freeData(void* data, size_t , void*){
 	free(data);
 }
 
-static void  freeT(void* data, size_t, void*){
+static void  freeT(void*, size_t, void*){
 }
 
 
@@ -72,7 +47,6 @@ static void printTFOpParam(TF_Graph* pGraph, std::string name, TF_Operation* pOp
 	for (int k = 0; k < numDims; k++) printf("%ld, ", pDims[k]);
 	printf("\n");
 	free(pDims);
-
 }
 
 
@@ -152,7 +126,6 @@ bool initTF(const char* cnnFilePath, const char* rnnFilePath, const char* allFil
 		initModel(allFilePath, &allModel, inputNamesALL, outputNamesRNN);
 		printf("\n%d: Initialized ALL Model\n", i++);
 	}
-
 
 	initModel(cnnFilePath, &cnnModel, inputNamesCNN, outputNamesCNN);
 	printf("\n%d: Initialized CNN Model\n", i++);
