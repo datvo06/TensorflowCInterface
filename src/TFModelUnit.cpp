@@ -71,7 +71,6 @@ static bool initModel(const char* filePath, DatCustom::Tensorflow::TFModelUnit* 
 		}
 		DatCustom::Tensorflow::printTFOpParam(pModelUnit->pGraph, i->first, i->second);
 	}
-
 	return true;
 }
 
@@ -79,7 +78,6 @@ static bool initModel(const char* filePath, DatCustom::Tensorflow::TFModelUnit* 
 
 DatCustom::Tensorflow::TFModelUnit::TFModelUnit(const char* filePath, const std::vector<std::string>& inputNames,
 		const std::vector<std::string>& outputNames){
-	printf("Inside TFModelUnit constructor - Here\n");
 	initModel(filePath, this, inputNames, outputNames);
 }
 
@@ -131,6 +129,6 @@ TF_Tensor* DatCustom::Tensorflow::TFModelUnit::run(std::map<std::string, void*> 
 
 
 DatCustom::Tensorflow::TFModelUnit::~TFModelUnit(){
-	//TF_DeleteGraph(this->pGraph);
-	//TF_CloseSession(this->pSess, TFStatusSingleton::instance().getStatus());
+	TF_DeleteGraph(this->pGraph);
+	TF_CloseSession(this->pSess, TFStatusSingleton::instance().getStatus());
 }
