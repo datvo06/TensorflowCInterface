@@ -37,7 +37,7 @@ static bool initModel(const char* filePath, DatCustom::Tensorflow::TFModelUnit* 
 
 	if(TF_GetCode(pStatus) != TF_OK){
 		// print some errors here...
-		fprintf(stderr, "ERROR: Unable Load GraphDef: %s", TF_Message(pStatus));
+		fprintf(stderr, "ERROR: Unable Load GraphDef: %s\n", TF_Message(pStatus));
 		return false;
 	}
 
@@ -78,16 +78,21 @@ static bool initModel(const char* filePath, DatCustom::Tensorflow::TFModelUnit* 
 
 DatCustom::Tensorflow::TFModelUnit::TFModelUnit(const char* filePath, const std::vector<std::string>& inputNames,
 		const std::vector<std::string>& outputNames){
+	// TFModelUnit();
 	initModel(filePath, this, inputNames, outputNames);
 }
 
 
-TF_Tensor* DatCustom::Tensorflow::TFModelUnit::run(std::map<std::string, void*> inpDataDict,
+std::vector<TF_Tensor*> DatCustom::Tensorflow::TFModelUnit::run(std::map<std::string, void*> inpDataDict,
 		std::map<std::string, std::vector<int64_t>> inpDimsDict,
 		std::map<std::string, size_t> inpDataSizeInByteDict,
 		std::map<std::string, TF_DataType> inpTypeDict, std::vector<std::string> outputOpsString){
 	TF_Output* inps = (TF_Output*)malloc(inpDataDict.size()*sizeof(TF_Output));
-	TF_Tensor* pOutputTensor = NULL;
+	std::vector<TF_Tensor*> ppOutputTensors;
+	for (size_t i = 0; i < outputOpsString.size(); i++){
+		ppOutputTensors.push_back(NULL);
+	}
+
 	TF_Output* outs = (TF_Output*)malloc(outputOpsString.size()*sizeof(TF_Output));
 	TF_Tensor** pAllInpTensors = (TF_Tensor**) malloc(inpDataDict.size()*sizeof(TF_Tensor*));
 	std::vector<std::string> keyVecs;
@@ -113,7 +118,7 @@ TF_Tensor* DatCustom::Tensorflow::TFModelUnit::run(std::map<std::string, void*> 
 	TF_SessionRun(this->pSess,
 			NULL,
 			inps, pAllInpTensors, (int)keyVecs.size(),
-			outs, &pOutputTensor, (int)outputOpsString.size(),
+			outs, ppOutputTensors.data(), (int)outputOpsString.size(),
 			NULL, 0, NULL, TFStatusSingleton::instance().getStatus());
 	for (size_t i = 0; i < keyVecs.size(); i++){
 		TF_DeleteTensor(pAllInpTensors[i]);
@@ -124,7 +129,7 @@ TF_Tensor* DatCustom::Tensorflow::TFModelUnit::run(std::map<std::string, void*> 
 	free(pAllInpTensors);
 	free(inps);
 	free(outs);
-	return pOutputTensor;
+	return ppOutputTensors;
 }
 
 

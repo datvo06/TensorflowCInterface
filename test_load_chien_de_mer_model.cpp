@@ -53,13 +53,13 @@ TF_Tensor* predictTF(float* inpData, int32_t inpSize){
 			{{"X", {1, inpSize, 39, 1}}, {"T", {1}}}, 
 			{{"X", sizeof(float)*inpSize*39}, {"T", sizeof(int32_t)}},
 			{{"X", TF_FLOAT}, {"T", TF_INT32}},
-			{"softmax"});
+			{"softmax"})[0];
 }
 
 
 TF_Tensor* predictTFCNN(float* inpData, int32_t inpSize){
 	return pCnnModel->run({{"X", (void*)inpData}}, {{"X", {1, inpSize, 39, 1}}},
-			{{"X", sizeof(float)*inpSize*39}}, {{"X", TF_FLOAT}}, {"X_conv_relu"});
+			{{"X", sizeof(float)*inpSize*39}}, {{"X", TF_FLOAT}}, {"X_conv_relu"})[0];
 }
 
 
@@ -67,7 +67,7 @@ TF_Tensor* predictTFRNN(float* inpData, int32_t T){
 	return pRnnModel->run({{"X_conv_input", (void*)inpData}, {"T", (void*)&T}},
 			{{"X_conv_input", {1, int64_t((T-15)/6)+1, 48*18}}, {"T", {1}}},
 			{{"X_conv_input", sizeof(float)*48*18*(int64_t((T-15)/6)+1)}, {"T", sizeof(int32_t)}},
-			{{"X_conv_input", TF_FLOAT}, {"T", TF_INT32}}, {"softmax"});
+			{{"X_conv_input", TF_FLOAT}, {"T", TF_INT32}}, {"softmax"})[0];
 }
 
 
